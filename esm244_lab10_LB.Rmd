@@ -1,0 +1,201 @@
+---
+title: "esm244_lab10_LB"
+author: "Lydia Bleifuss"
+date: "3/24/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE,
+                      connection = "lter_db") #THIS will automatically connect to your database in all code chunks (including sql) 
+
+library(here)
+library(tidyverse)
+library(DBI)
+library(RSQLite)
+```
+
+
+### A. Connect to the database and tell R we're usign SQLite
+```{r}
+
+lter_db <- DBI::dbConnect(drv = RSQLite::SQLite(),
+                          dbname = here("data","marine.sqlite"))
+
+```
+
+
+### B. What tables exist in the database? 
+
+To check qhihc tables exsits (table names) in database, use 'DBI::dbListTables()':
+```{r}
+
+DBI::dbListTables(lter_db)
+
+#Should populate [1] "fish_data"     "inverts_data"  "lobsters_data"
+
+```
+
+### C. Which variables are in a database table? 
+
+Use 'DBI::dbListFields()'
+
+```{r}
+DBI:: dbListFields(lter_db, "fish_data") 
+
+#[1] "year"        "site"        "common_name" "total_count"
+
+DBI:: dbListFields(lter_db, "inverts_data") 
+
+#[1] "month"       "site"        "common_name" "2016"        "2017"       [6] "2018"
+
+DBI:: dbListFields(lter_db, "lobsters_data") 
+
+#[1] "year"      "month"     "date"      "site"      "transect"  "replicate" [7] "size_mm"
+
+```
+
+
+#### Read in a database table as an R data frame
+
+Use 'DBI::dbReadTable()' 
+
+```{r}
+fish_df <- DBI::dbReadTable(lter_db, "fish_data") 
+View(fish_df) #Now can read in dfs from SQLite info and work with it there
+
+```
+
+#### Query a database using SQL 
+
+- SELECT: gets columns
+- FROM: what table in a database to get something from
+- Use * to indicate "get all" of something (e.g. columns)
+
+###SQL CODE DOWN HERE!!
+```{sql connection=lter_db}
+SELECT * FROM fish_data
+```
+
+To get a subset of the colums, we can just list them after SELECT, separated by a comma: 
+
+#didn't need "connection=" up here because I set it at the top
+```{sql}
+
+SELECT year, site FROM fish_data
+
+```
+
+We might want to only query for ROWS (observations) that match a given condition we set. 
+
+- in R: dplyr::filter()
+- in SQL: WHERE
+
+```{sql}
+
+SELECT * FROM fish_data WHERE year == 2016
+
+```
+
+
+Now let's query to keep all columns from fish_data, but only if the common_name variable matches "garibaldi": 
+
+```{sql}
+
+SELECT common_name, site FROM fish_data WHERE common_name == "garibaldi" 
+
+```
+
+In dplyr:
+filter for an "and" statement: , & 
+SQL: "and" 
+
+Example: Query to only keep observations where the common_name == "garibaldi" AND site == "mohk" 
+
+```{sql}
+
+SELECT * FROM fish_data WHERE common_name == "garibaldi" AND site == "mohk" 
+
+```
+
+
+To write an OR statement 
+- | (vertical line), %in%
+
+Example: Query to keep observations where year is 2017 OR site is "abur" 
+
+```{sql}
+
+SELECT * FROM fish_data WHERE year == 2017 OR site == "abur"
+
+```
+
+#### Store an output from SQL querying 
+
+Add in code chunk header 'output.var = "name_object"'
+
+#in the {}, put output.var = "fish_2017_df" which makes it a dataframe, can now work with this in r codechunk! 
+```{sql, output.var = "fish_2017_df"}
+
+SELECT * FROM fish_data WHERE year == 2017
+
+```
+
+
+#### Query using SQL from an R code chunk 
+
+'DBI::dbSendQuery()'
+
+```{r}
+garibaldi <- dbSendQuery(lter_db, "SELECT * FROM fish_data WHERE common_name == 'garibaldi'") #step before making a df
+
+#puttig SQL code into "" so R knows we are using other code 
+
+gar_df <- dbFetch(garibaldi) #This makes the df! 
+
+```
+
+
+### Querying using dplyr-ish code
+
+- 'dplyr' 
+
+
+```{r}
+fish_tbl <- tbl(lter_db, "fish_data")
+```
+
+# Some wrangling: 
+
+```{r}
+yearly_fish <- fish_tbl %>% 
+  group_by(year) %>% 
+  summarize(
+    total_fish = sum(total_count)
+  )
+
+yearly_fish %>% show_query() #THIS shows you exactly what SQL code you would need to use to do the same thing you just did in dplyr 
+
+yearly_fish %>%  collect() #This gives you the outcome of the SQL code 
+```
+
+
+#### Adding or removing tables from a .sqlite database
+
+USE 'DBI::dbWriteTable' and 'DBI::dbRemoveTable' functions to add or remove tables from/to an existing database
+
+```{r}
+dbWriteTable(lter_db, "mtcars_df", mtcars)
+
+# Check to see what tables are in the database now: 
+
+DBI:: dbListTables(lter_db) #now it shows you that mtcars_df in included in the Table 
+
+## dbRemoveTable (now we want to get rid of it again)
+DBI::dbRemoveTable(lter_db, "mtcars_df")
+
+DBI::dbListTables(lter_db)
+```
+
